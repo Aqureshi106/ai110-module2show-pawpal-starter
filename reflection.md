@@ -6,11 +6,11 @@
 
 - Briefly describe your initial UML design.
 
-For the initial UML design, I would have a class related to the user information regarding the pet info and basic owner. Then, another class added would be the addition and modification of tasks. Lastly, I would also add a class regarding the daily schedule generation which would require the previously described classes.
+For the initial UML design, I would have a class related to the user information regarding the pet info and basic owner. Another class handles adding and modifying tasks. Lastly, I would also add a class regarding the daily schedule generation which would require the previously described classes.
 
 - What classes did you include, and what responsibilities did you assign to each?
 
-Five classes are included in the UML design. The Owner class stores basic owner details, available time, and care preferences. The Pet class stores specific information like name and species regarding pets. The Task class represents each care activity, including title, duration, and priority. The TaskManager class's responsibility is to add, edit, and list tasks. Lastly, the DailyScheduleGenerator class utilizes owner constraints, pet context, and task data to generate a daily schedule and provide the rationale of its selection.
+Five classes are included in the UML design. The Owner class stores basic owner details, available time, and care preferences. The Pet class stores specific information like pet name and species. The Task class represents each care activity, including title, duration, and priority. The TaskManager class's responsibility is to add, edit, and list tasks. Lastly, the DailyScheduleGenerator class utilizes owner constraints, pet context, and task data to generate a daily schedule and provide the rationale of its selection.
 
 **b. Design changes**
 
@@ -44,7 +44,7 @@ A tradeoff is that the scheduler uses a greedy strategy as it schedules tasks in
 
 - Why is that tradeoff reasonable for this scenario?
 
-The tradeoff is reasonable as the project needs a scheduler that is simple to understand, fast to access, and reliable to everyday pet-care planning, not a perfect optimizer; a greedy approach provides clear predictable behavior, simpler to implement and test to produce practical schedules under real time limits.
+This tradeoff is reasonable because the scheduler prioritizes simplicity, speed, and reliability over optimality; a greedy approach provides clear predictable behavior, simpler to implement and test to produce practical schedules under real time limits.
 
 ---
 
@@ -88,7 +88,7 @@ These tests are crucial as it determines if each key behavior functions correctl
 
 - How confident are you that your scheduler works correctly?
 
-Given that the demo worked with the basic operations, I am confident that the scheduler will work correctly in terms of the app and logic.
+Given that the demo worked with the basic operations, I am confident that the scheduler will work correctly in terms of the app and logic as the pytests passed, many cases were handled and the design is constructed to promote efficiency.
 
 - What edge cases would you test next if you had more time?
 
