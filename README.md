@@ -22,15 +22,26 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
-## Smarter Scheduling
+## Features
 
-Recent scheduling improvements focus on safer and more realistic planning:
+Core algorithms currently implemented in PawPal+:
 
-- Greedy daily planning that schedules due tasks in a consistent order and defers tasks when time runs out
-- Time-budget checks to warn when pending task duration exceeds owner availability
-- Preferred-time and scheduled-time overlap detection, including cross-pet conflicts
-- Lightweight conflict detection that returns structured warnings instead of crashing on malformed data
-- Validation for invalid durations and duplicate recurring tasks
+- Multi-key task ordering: tasks are sorted by completion state, recurrence frequency rank (`daily` -> `weekly` -> `monthly` -> `as-needed`), then duration.
+- Sorting by time: standalone shortest-first or longest-first sorting by task duration.
+- Recurrence-aware due logic: determines whether tasks are due based on frequency intervals (daily/weekly/monthly), completion history, and optional date-based due dates.
+- Greedy daily scheduling: fills the available minute budget sequentially with ordered due tasks and defers any tasks that no longer fit.
+- Time-budget conflict warnings: flags when total pending task minutes exceed the owner's available time.
+- Preferred-time overlap detection: detects overlaps between preferred task windows for the same pet and across different pets.
+- Scheduled-window conflict detection: pairwise overlap checks across concrete scheduled start/end windows.
+- Daily/weekly recurrence spawning: when a recurring task is completed, the next occurrence is automatically created with the correct next due date.
+- Duplicate recurring-task detection: identifies repeated task signatures (pet + normalized description + frequency).
+- Lightweight safe conflict mode: returns structured warning objects and gracefully handles malformed/null values without crashing.
+
+## 📸 Demo
+
+Add your final Streamlit app screenshot to the repository as `image.png`, then it will render here:
+
+![PawPal+ Final Streamlit App](image.png)
 
 ## Getting started
 

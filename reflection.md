@@ -53,12 +53,22 @@ The tradeoff is reasonable as the project needs a scheduler that is simple to un
 **a. How you used AI**
 
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
+
+With the AI tools, it greatly assisted me with debugging the code to find errors, along with thinking of the algorithmic design, and refactoring the code to ensure the code to be more efficient and readable. Also, it assisted me with writing pytests to know the code is reliable.
+
 - What kinds of prompts or questions were most helpful?
+
+I utilized prompts such as reviewing the code to ensure if the logic fulfills the requirements that the project asks. I also asked how the algorithmic design of the app should be written and why the design would be the best in terms of the scenario of the project.
 
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
+
+I had asked Copilot with regards to describing the priority of the algorithmic design of the scheduler, it was describing it directly based on a task priority field but I thought of describing it based on due and completion status, frequency order and duration, so I had to utilize a different prompt.
+
 - How did you evaluate or verify what the AI suggested?
+
+As I had to make sure the suggestion would accomplish what the directions of the project asked, I then utilized the pytests to see if the code accurately works and if not, I had to review the logic and algorithmic design to see if an error exists.
 
 ---
 
@@ -67,12 +77,22 @@ The tradeoff is reasonable as the project needs a scheduler that is simple to un
 **a. What you tested**
 
 - What behaviors did you test?
+
+The task state management, sorting and filtering, scheduling logic, task recurrence, time-budget conflict detection, time preference conflict detection, scheduled time overlap detection, sequential task handling, and lightweight conflict detection.
+
 - Why were these tests important?
+
+These tests are crucial as it determines if each key behavior functions correctly such as task list operations, completion status, order preservation, tracking occurrences, availability of time, overlaps within a certain pet, task window overlap between different pets, confirmation of non-overlapping adjacent tasks, and provide warnings that doesn't cause the application to crash on malformed data.
 
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
+
+Given that the demo worked with the basic operations, I am confident that the scheduler will work correctly in terms of the app and logic.
+
 - What edge cases would you test next if you had more time?
+
+The case of very large task sets in order to check the performence of the scheduler as well as correctness. Another case would be null/missing values such as null due dates and pets with no tasks assigned. Also, empty or extreme time budgets which a circumstance where scheduling can occur in only 1 minute available.
 
 ---
 
@@ -82,10 +102,16 @@ The tradeoff is reasonable as the project needs a scheduler that is simple to un
 
 - What part of this project are you most satisfied with?
 
+I am satisfied with how the project's design was organized including Copilot's ability to understand the prompts I utilized based on the directions of the project to ensure the efficiency and functionality of the application.
+
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
 
+If given another iteration, perhaps I would look to test edge cases that weren't considered or redesign the algorithmic structure that could make improve the application compared to what was constructed.
+
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+
+With regards to takeaway from designing systems with the utilization of artificial intelligence is to realize that it is critical for the prompts to be clear and precise for the articicial intelligence to interpret what is being asked to provide accurate suggestions as systems are complex and being brief can only do so much, details are vital.

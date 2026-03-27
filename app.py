@@ -10,6 +10,16 @@ def get_or_create_owner(owner_name: str) -> Owner:
         st.session_state.owner.name = owner_name
     return st.session_state.owner
 
+
+def render_lightweight_warning(level: str, message: str) -> None:
+    """Render a conflict warning with severity-aware Streamlit styling."""
+    if level == "critical":
+        st.error(message)
+    elif level == "warning":
+        st.warning(message)
+    else:
+        st.info(message)
+
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
 st.title("🐾 PawPal+")
@@ -126,24 +136,32 @@ if all_tasks:
         selected_status = True
 
     filtered_tasks = scheduler.filter_tasks(owner, pet_name=selected_pet, completed=selected_status)
-    filtered_tasks = scheduler.sort_by_time(
+    filtered_tasks = scheduler.sort_tasks_by_time(
         filtered_tasks,
         ascending=(sort_mode == "shortest-first"),
     )
 
-    st.write("Current tasks:")
-    st.table(
-        [
-            {
-                "pet": task.pet_name,
-                "task": task.description,
-                "duration_minutes": task.time_minutes,
-                "frequency": task.frequency,
-                "completed": task.completed,
-            }
-            for task in filtered_tasks
-        ]
-    )
+    task_rows = [
+        {
+            "pet": task.pet_name,
+            "task": task.description,
+            "duration_minutes": task.time_minutes,
+            "frequency": task.frequency,
+            "status": "Completed" if task.completed else "Pending",
+        }
+        for task in filtered_tasks
+    ]
+
+    if task_rows:
+        total_filtered_minutes = sum(task.time_minutes for task in filtered_tasks)
+        st.success(
+            f"Showing {len(task_rows)} task(s) after filtering and sorting "
+            f"({total_filtered_minutes} total minutes)."
+        )
+        st.write("Current tasks:")
+        st.table(task_rows)
+    else:
+        st.warning("No tasks match the current filters.")
 else:
     st.info("No tasks yet. Add one above.")
 
@@ -156,9 +174,10 @@ if st.button("Generate schedule"):
     plan = scheduler.build_daily_schedule(owner)
     organized = plan["scheduled"]
     deferred = plan["deferred"]
-    conflicts = plan["conflicts"]
+    schedule_conflicts = plan["conflicts"]
+    lightweight_warnings = scheduler.detect_conflicts_lightweight(owner)
 
-    if not organized:
+    if not organized and not deferred:
         st.info("No tasks available to schedule.")
     else:
         scheduled_rows = []
@@ -176,6 +195,7 @@ if st.button("Generate schedule"):
             )
             current_minute += task.time_minutes
 
+        sorted_deferred_tasks = scheduler.sort_tasks_by_time(deferred, ascending=True)
         deferred_rows = [
             {
                 "pet": task.pet_name,
@@ -183,20 +203,35 @@ if st.button("Generate schedule"):
                 "duration": task.time_minutes,
                 "frequency": task.frequency,
             }
-            for task in deferred
+            for task in sorted_deferred_tasks
         ]
 
         st.write("Today's Schedule")
         if scheduled_rows:
+            scheduled_minutes = sum(task.time_minutes for task in organized)
+            st.success(
+                f"Scheduled {len(scheduled_rows)} task(s) within today's budget "
+                f"({scheduled_minutes}/{owner.time_available_minutes} minutes used)."
+            )
             st.table(scheduled_rows)
         else:
             st.info("No tasks fit in the available time.")
 
         if deferred_rows:
+            deferred_minutes = sum(task.time_minutes for task in deferred)
+            st.warning(
+                f"Deferred {len(deferred_rows)} task(s) "
+                f"({deferred_minutes} total minutes) due to time constraints."
+            )
             st.write("Deferred tasks")
             st.table(deferred_rows)
 
-        if conflicts:
+        if schedule_conflicts:
             st.write("Scheduling conflicts")
-            for conflict in conflicts:
+            for conflict in schedule_conflicts:
                 st.warning(conflict)
+
+    if lightweight_warnings:
+        st.write("Conflict warnings (lightweight detector)")
+        for warning in lightweight_warnings:
+            render_lightweight_warning(warning.level, str(warning))
