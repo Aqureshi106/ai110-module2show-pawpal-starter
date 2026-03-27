@@ -22,6 +22,16 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Smarter Scheduling
+
+Recent scheduling improvements focus on safer and more realistic planning:
+
+- Greedy daily planning that schedules due tasks in a consistent order and defers tasks when time runs out
+- Time-budget checks to warn when pending task duration exceeds owner availability
+- Preferred-time and scheduled-time overlap detection, including cross-pet conflicts
+- Lightweight conflict detection that returns structured warnings instead of crashing on malformed data
+- Validation for invalid durations and duplicate recurring tasks
+
 ## Getting started
 
 ### Setup
