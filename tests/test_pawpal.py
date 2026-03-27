@@ -1,6 +1,17 @@
 from datetime import date, timedelta
 
-from pawpal_system import Owner, Pet, Scheduler, Task, ScheduledTask, ConflictWarning, LightweightConflictDetector
+import pytest
+
+from pawpal_system import (
+	ConflictWarning,
+	DailyScheduleGenerator,
+	LightweightConflictDetector,
+	Owner,
+	Pet,
+	ScheduledTask,
+	Scheduler,
+	Task,
+)
 
 
 def test_task_completion_changes_status() -> None:
@@ -31,6 +42,27 @@ def test_sort_tasks_by_time_shortest_first() -> None:
 	sorted_tasks = scheduler.sort_by_time(tasks)
 
 	assert [task.description for task in sorted_tasks] == ["Short", "Medium", "Long"]
+
+
+def test_generate_schedule_returns_tasks_in_chronological_order() -> None:
+	owner = Owner(name="Jordan", time_available_minutes=45)
+	pet = Pet(name="Mochi", species="dog")
+	tasks = [
+		Task(description="Daily feed", time_minutes=5, frequency="daily", pet_name="Mochi"),
+		Task(description="Walk", time_minutes=20, frequency="daily", pet_name="Mochi"),
+		Task(description="Weekly brush", time_minutes=10, frequency="weekly", pet_name="Mochi"),
+	]
+
+	generator = DailyScheduleGenerator()
+	plan = generator.generate_schedule(owner, pet, tasks)
+
+	start_minutes = [item.start_minute for item in plan.scheduled]
+	assert start_minutes == sorted(start_minutes)
+	assert [item.task_title for item in plan.scheduled] == [
+		"Daily feed",
+		"Walk",
+		"Weekly brush",
+	]
 
 
 def test_filter_tasks_by_pet_and_status() -> None:
@@ -390,4 +422,99 @@ def test_scheduler_detect_conflicts_lightweight_with_scheduled_tasks() -> None:
 	# Should detect the overlap
 	assert any("overlap" in w.message.lower() for w in warnings)
 	assert scheduler._has_time_overlap(10, 20, 0, 30) is True
+
+
+def test_build_daily_schedule_happy_path_orders_by_frequency_then_duration() -> None:
+	owner = Owner(name="Jordan", time_available_minutes=60)
+	pet = Pet(name="Mochi", species="dog")
+	owner.add_pet(pet)
+
+	pet.add_task(Task(description="Weekly grooming", time_minutes=10, frequency="weekly"))
+	pet.add_task(Task(description="Daily walk", time_minutes=20, frequency="daily"))
+	pet.add_task(Task(description="Daily feed", time_minutes=5, frequency="daily"))
+
+	scheduler = Scheduler()
+	plan = scheduler.build_daily_schedule(owner)
+
+	assert [task.description for task in plan["scheduled"]] == [
+		"Daily feed",
+		"Daily walk",
+		"Weekly grooming",
+	]
+	assert plan["deferred"] == []
+
+
+def test_build_daily_schedule_for_pet_with_no_tasks_is_empty() -> None:
+	owner = Owner(name="Jordan", time_available_minutes=45)
+	pet = Pet(name="Mochi", species="dog")
+	owner.add_pet(pet)
+
+	scheduler = Scheduler()
+	plan = scheduler.build_daily_schedule(owner)
+
+	assert plan["scheduled"] == []
+	assert plan["deferred"] == []
+	assert plan["conflicts"] == []
+
+
+def test_build_daily_schedule_with_zero_available_time_defers_all() -> None:
+	owner = Owner(name="Jordan", time_available_minutes=0)
+	pet = Pet(name="Mochi", species="dog")
+	owner.add_pet(pet)
+	pet.add_task(Task(description="Walk", time_minutes=20, frequency="daily", pet_name="Mochi"))
+
+	scheduler = Scheduler()
+	plan = scheduler.build_daily_schedule(owner)
+
+	assert plan["scheduled"] == []
+	assert len(plan["deferred"]) == 1
+	assert any("exceeds available time" in item for item in plan["conflicts"])
+
+
+def test_detect_scheduled_time_conflicts_with_identical_windows() -> None:
+	scheduler = Scheduler()
+	scheduled_tasks = [
+		ScheduledTask(task_id="1", task_title="Walk", start_minute=10, end_minute=20, reason=""),
+		ScheduledTask(task_id="2", task_title="Feed", start_minute=10, end_minute=20, reason=""),
+	]
+
+	conflicts = scheduler.detect_scheduled_time_conflicts(scheduled_tasks)
+
+	assert len(conflicts) > 0
+	assert any("Time conflict detected" in item for item in conflicts)
+
+
+def test_is_task_due_unknown_frequency_defaults_to_not_completed() -> None:
+	scheduler = Scheduler()
+	unknown_frequency_task = Task(description="Custom", time_minutes=5, frequency="yearly")
+
+	assert scheduler.is_task_due(unknown_frequency_task) is True
+	unknown_frequency_task.mark_complete()
+	assert scheduler.is_task_due(unknown_frequency_task) is False
+
+
+def test_mark_task_complete_twice_does_not_spawn_duplicate_occurrence() -> None:
+	owner = Owner(name="Jordan", time_available_minutes=60)
+	pet = Pet(name="Mochi", species="dog")
+	owner.add_pet(pet)
+	original = Task(description="Walk", time_minutes=20, frequency="daily")
+	pet.add_task(original)
+
+	scheduler = Scheduler()
+	first_spawned = scheduler.mark_task_complete(owner, original.id)
+	second_spawned = scheduler.mark_task_complete(owner, original.id)
+
+	assert first_spawned is not None
+	assert second_spawned is None
+	assert len(pet.tasks) == 2
+
+
+def test_mark_task_complete_raises_for_missing_task_id() -> None:
+	owner = Owner(name="Jordan", time_available_minutes=60)
+	pet = Pet(name="Mochi", species="dog")
+	owner.add_pet(pet)
+
+	scheduler = Scheduler()
+	with pytest.raises(ValueError, match="not found"):
+		scheduler.mark_task_complete(owner, "missing-id")
 
