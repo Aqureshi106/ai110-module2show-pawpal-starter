@@ -39,7 +39,7 @@ Core algorithms currently implemented in PawPal+:
 
 ## 📸 Demo
 
-Add your final Streamlit app screenshot to the repository as `image.png`, then it will render here:
+Add your final Streamlit app screenshot to the repository as `image.png`, then it will render below:
 
 ![PawPal+ Final Streamlit App](image.png)
 
