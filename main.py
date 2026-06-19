@@ -1,163 +1,203 @@
-from pawpal_system import Owner, Pet, Scheduler, Task
+import sys
+
+# Ensure emoji and Unicode characters render correctly on Windows terminals.
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+from pawpal_system import Owner, Pet, PriorityLevel, Scheduler, Task
+from format_utils import (
+    bold,
+    cyan,
+    dim,
+    green,
+    print_conflict_warnings,
+    print_conflicts,
+    print_owner_summary,
+    print_schedule_table,
+    print_section_header,
+    print_task_table,
+    yellow,
+)
 
 
-def print_todays_schedule(owner: Owner, scheduler: Scheduler) -> None:
-	print("Today's Schedule")
-	print("=" * 16)
+def demo_sorting_and_filtering(owner: Owner, scheduler: Scheduler) -> None:
+    all_tasks = owner.get_all_tasks()
 
-	plan = scheduler.build_daily_schedule(owner)
-	organized_tasks = plan["scheduled"]
-	deferred_tasks = plan["deferred"]
-	conflicts = plan["conflicts"]
-	current_minute = 0
+    print_task_table(all_tasks, title="All Tasks — Insertion Order")
 
-	for task in organized_tasks:
-		start = current_minute
-		end = current_minute + task.time_minutes
-		print(
-			f"- {start:02d}-{end:02d} min | {task.pet_name}: {task.description} "
-			f"({task.time_minutes} min, {task.frequency})"
-		)
-		current_minute = end
+    print_task_table(
+        scheduler.sort_by_time(all_tasks, ascending=True),
+        title="Sorted by Time — Shortest First",
+    )
 
-	for task in deferred_tasks:
-		print(f"- DEFERRED: {task.description} ({task.time_minutes} min) for {task.pet_name}")
+    print_task_table(
+        scheduler.filter_tasks(owner, pet_name="Mochi"),
+        title="Filtered — Pet: Mochi",
+    )
 
-	if conflicts:
-		print("\nConflicts detected:")
-		for item in conflicts:
-			print(f"- {item}")
+    print_task_table(
+        scheduler.filter_tasks(owner, completed=False),
+        title="Filtered — Pending Tasks Only",
+    )
 
 
-def print_lightweight_conflict_detection_demo(owner: Owner, scheduler: Scheduler) -> None:
-	"""Demonstrate lightweight conflict detection with overlapping task times."""
-	print("\n" + "=" * 70)
-	print("LIGHTWEIGHT CONFLICT DETECTION - Tasks Scheduled at Same Time")
-	print("=" * 70)
+def demo_schedule(owner: Owner, scheduler: Scheduler) -> None:
+    plan = scheduler.build_daily_schedule(owner)
+    warnings = scheduler.detect_conflicts_lightweight(owner)
 
-	print("\nScenario: Two pets with tasks scheduled at the same time")
-	print(f"Owner: {owner.name} | Available time: {owner.time_available_minutes} minutes")
-	print(f"\nPets and their tasks (with preferred start times):")
-	
-	for pet in owner.pets:
-		print(f"\n  {pet.name}:")
-		for task in pet.tasks:
-			if task.preferred_start_minute is not None:
-				end_time = task.preferred_start_minute + task.time_minutes
-				print(f"    - {task.description}: {task.preferred_start_minute}-{end_time} min ({task.time_minutes} min)")
-			else:
-				print(f"    - {task.description}: (no preferred time) ({task.time_minutes} min)")
-
-	print("\n" + "-" * 70)
-	print("Running Lightweight Conflict Detection...")
-	print("-" * 70)
-
-	warnings = scheduler.detect_conflicts_lightweight(owner)
-
-	if not warnings:
-		print("✓ No conflicts detected!")
-	else:
-		print(f"\n⚠️  WARNINGS DETECTED ({len(warnings)} total):\n")
-		for i, warning in enumerate(warnings, 1):
-			print(f"{i}. {warning}")
-			if warning.affected_tasks:
-				print(f"   └─ Affected task IDs: {', '.join(warning.affected_tasks)}")
-			if warning.pet_names:
-				print(f"   └─ Affected pets: {', '.join(warning.pet_names)}")
-
-	print("\n✓ System continues safely - warnings handled gracefully!")
+    print_schedule_table(
+        scheduled=plan["scheduled"],
+        deferred=plan["deferred"],
+        budget=owner.time_available_minutes,
+        title=f"Daily Schedule  ·  {owner.name}  ·  {owner.time_available_minutes} min budget",
+    )
+    print_conflicts(plan["conflicts"])
+    print_conflict_warnings(warnings)
 
 
-def print_sorting_and_filtering_demo(owner: Owner, scheduler: Scheduler) -> None:
-	print("\nSorting + Filtering Demo")
-	print("=" * 24)
+def demo_conflict_detection(scheduler: Scheduler) -> None:
+    print_section_header("Conflict Detection Demo — Overlapping Preferred Times")
 
-	all_tasks = owner.get_all_tasks()
-	print("Added order:")
-	for task in all_tasks:
-		status = "done" if task.completed else "pending"
-		print(f"- {task.pet_name}: {task.description} ({task.time_minutes} min, {status})")
+    conflict_owner = Owner(name="Alex", time_available_minutes=120)
+    mochi = Pet(name="Mochi", species="dog")
+    luna = Pet(name="Luna", species="cat")
+    conflict_owner.add_pet(mochi)
+    conflict_owner.add_pet(luna)
 
-	print("\nSorted by time (shortest first):")
-	for task in scheduler.sort_by_time(all_tasks, ascending=True):
-		print(f"- {task.pet_name}: {task.description} ({task.time_minutes} min)")
+    mochi.add_task(Task(
+        description="Morning feeding",
+        time_minutes=15,
+        frequency="daily",
+        preferred_start_minute=30,
+    ))
+    mochi.add_task(Task(
+        description="Playtime",
+        time_minutes=20,
+        frequency="daily",
+        preferred_start_minute=35,   # overlaps with Morning feeding (30–45)
+    ))
+    luna.add_task(Task(
+        description="Feeding",
+        time_minutes=10,
+        frequency="daily",
+        preferred_start_minute=40,   # overlaps across pets
+    ))
+    luna.add_task(Task(
+        description="Grooming",
+        time_minutes=20,
+        frequency="daily",
+        preferred_start_minute=85,   # no conflict
+    ))
 
-	print("\nFiltered by pet='Mochi':")
-	for task in scheduler.filter_tasks(owner, pet_name="Mochi"):
-		status = "done" if task.completed else "pending"
-		print(f"- {task.description} ({task.time_minutes} min, {status})")
+    print_owner_summary(conflict_owner)
+    print_task_table(conflict_owner.get_all_tasks(), title="Tasks with Preferred Start Times")
 
-	print("\nFiltered by completed=False:")
-	for task in scheduler.filter_tasks(owner, completed=False):
-		print(f"- {task.pet_name}: {task.description} ({task.time_minutes} min)")
+    warnings = scheduler.detect_conflicts_lightweight(conflict_owner)
+    print_conflict_warnings(warnings)
+
+
+def demo_priority_scheduling() -> None:
+    print_section_header("Priority-Based Scheduling Demo")
+
+    owner = Owner(name="Jordan", time_available_minutes=60)
+    pet = Pet(name="Mochi", species="dog")
+    owner.add_pet(pet)
+
+    pet.add_task(Task("Administer eye drops", 5,  "daily",   PriorityLevel.HIGH))
+    pet.add_task(Task("Morning walk",        30,  "daily",   PriorityLevel.LOW))
+    pet.add_task(Task("Refill water bowl",    5,  "daily",   PriorityLevel.MEDIUM))
+    pet.add_task(Task("Weekly grooming",     20,  "weekly",  PriorityLevel.MEDIUM))
+    pet.add_task(Task("Vet appointment",     45,  "monthly", PriorityLevel.HIGH))
+
+    scheduler = Scheduler()
+
+    print_task_table(pet.tasks, title="Tasks — Insertion Order")
+
+    print_task_table(
+        scheduler.sort_by_time(pet.tasks),
+        title="sort_by_time  (duration only — priority ignored)",
+    )
+
+    print_task_table(
+        scheduler.organize_tasks(owner),
+        title="organize_tasks  (priority → frequency → duration)",
+    )
+
+    plan = scheduler.build_daily_schedule(owner)
+    print_schedule_table(
+        scheduled=plan["scheduled"],
+        deferred=plan["deferred"],
+        budget=owner.time_available_minutes,
+        title="build_daily_schedule  (60 min budget, priority-ordered fill)",
+    )
+
+
+def demo_urgency_schedule() -> None:
+    print_section_header("Urgency-Weighted Schedule Demo")
+
+    from datetime import date, timedelta
+
+    owner = Owner(name="Sam", time_available_minutes=90)
+    pet = Pet(name="Luna", species="cat")
+    owner.add_pet(pet)
+
+    today = date.today()
+    pet.add_task(Task(
+        "Overdue vet checkup", 45, "monthly",
+        priority=PriorityLevel.HIGH,
+        due_date=today - timedelta(days=5),
+    ))
+    pet.add_task(Task(
+        "Daily meds", 5, "daily",
+        priority=PriorityLevel.HIGH,
+    ))
+    pet.add_task(Task(
+        "Fur brushing", 15, "weekly",
+        priority=PriorityLevel.MEDIUM,
+    ))
+    pet.add_task(Task(
+        "Play session", 20, "as-needed",
+        priority=PriorityLevel.LOW,
+    ))
+
+    scheduler = Scheduler()
+    plan = scheduler.build_urgency_prioritized_schedule(owner, current_date=today)
+    print_schedule_table(
+        scheduled=plan["scheduled"],
+        deferred=plan["deferred"],
+        budget=owner.time_available_minutes,
+        title="Urgency-Prioritized Schedule  (overdue items first)",
+        urgency_scores=plan["urgency_scores"],
+    )
 
 
 def main() -> None:
-	owner = Owner(name="Jordan", time_available_minutes=60, preferences=["morning"])
+    owner = Owner(name="Jordan", time_available_minutes=60, preferences=["morning"])
+    dog = Pet(name="Mochi", species="dog")
+    cat = Pet(name="Luna", species="cat")
+    owner.add_pet(dog)
+    owner.add_pet(cat)
 
-	dog = Pet(name="Mochi", species="dog")
-	cat = Pet(name="Luna", species="cat")
+    dog.add_task(Task("Morning walk",    25, "daily"))
+    cat.add_task(Task("Quick brush",      5, "daily"))
+    dog.add_task(Task("Feed breakfast",  10, "daily"))
+    cat.add_task(Task("Play session",    20, "weekly"))
+    cat.add_task(Task("Clean litter box", 15, "daily"))
 
-	owner.add_pet(dog)
-	owner.add_pet(cat)
+    cat.tasks[0].mark_complete()   # mark "Quick brush" done
 
-	# Intentionally add tasks out of order by duration.
-	dog.add_task(Task(description="Morning walk", time_minutes=25, frequency="daily"))
-	cat.add_task(Task(description="Quick brush", time_minutes=5, frequency="daily"))
-	dog.add_task(Task(description="Feed breakfast", time_minutes=10, frequency="daily"))
-	cat.add_task(Task(description="Play session", time_minutes=20, frequency="weekly"))
-	cat.add_task(Task(description="Clean litter box", time_minutes=15, frequency="daily"))
+    scheduler = Scheduler()
 
-	# Mark one task complete to demonstrate status filtering.
-	cat.tasks[0].mark_complete()
-
-	scheduler = Scheduler()
-	print_sorting_and_filtering_demo(owner, scheduler)
-	print_todays_schedule(owner, scheduler)
-
-	# DEMO: Show lightweight conflict detection with tasks at same time
-	print("\n" + "=" * 70)
-	print("Now demonstrating: CONFLICTING SCHEDULES WITH SAME-TIME TASKS")
-	print("=" * 70)
-	
-	# Create a scenario with tasks scheduled at the same time
-	conflict_owner = Owner(name="Alex", time_available_minutes=120, preferences=["morning"])
-	mochi = Pet(name="Mochi", species="dog")
-	luna = Pet(name="Luna", species="cat")
-	
-	conflict_owner.add_pet(mochi)
-	conflict_owner.add_pet(luna)
-	
-	# Add tasks with SAME preferred start times - these will conflict!
-	mochi.add_task(Task(
-		description="Morning feeding",
-		time_minutes=15,
-		frequency="daily",
-		preferred_start_minute=30  # Starts at 30 min, ends at 45 min
-	))
-	mochi.add_task(Task(
-		description="Playtime",
-		time_minutes=20,
-		frequency="daily",
-		preferred_start_minute=35  # Starts at 35 min, ends at 55 min - OVERLAPS!
-	))
-	
-	luna.add_task(Task(
-		description="Feeding",
-		time_minutes=10,
-		frequency="daily",
-		preferred_start_minute=40  # Starts at 40 min, ends at 50 min - crosses multiple pets!
-	))
-	luna.add_task(Task(
-		description="Grooming",
-		time_minutes=20,
-		frequency="daily",
-		preferred_start_minute=85  # No conflict
-	))
-	
-	conflict_scheduler = Scheduler()
-	print_lightweight_conflict_detection_demo(conflict_owner, conflict_scheduler)
+    print_owner_summary(owner)
+    demo_sorting_and_filtering(owner, scheduler)
+    demo_schedule(owner, scheduler)
+    demo_conflict_detection(scheduler)
+    demo_priority_scheduling()
+    demo_urgency_schedule()
 
 
 if __name__ == "__main__":
-	main()
+    main()

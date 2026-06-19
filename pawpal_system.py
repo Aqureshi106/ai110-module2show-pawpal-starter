@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -31,6 +33,26 @@ class Owner:
 			all_tasks.extend(pet.tasks)
 		return all_tasks
 
+	def to_dict(self) -> Dict[str, Any]:
+		"""Serialize owner, all pets, and all tasks to a JSON-compatible dict."""
+		return {
+			"name": self.name,
+			"time_available_minutes": self.time_available_minutes,
+			"preferences": list(self.preferences),
+			"pets": [pet.to_dict() for pet in self.pets],
+		}
+
+	@classmethod
+	def from_dict(cls, data: Dict[str, Any]) -> "Owner":
+		"""Reconstruct an Owner (with nested pets and tasks) from a dict."""
+		owner = cls(
+			name=data["name"],
+			time_available_minutes=data["time_available_minutes"],
+			preferences=data.get("preferences", []),
+		)
+		owner.pets = [Pet.from_dict(p) for p in data.get("pets", [])]
+		return owner
+
 
 @dataclass
 class Pet:
@@ -48,12 +70,28 @@ class Pet:
 		"""Return a shallow copy of this pet's tasks."""
 		return list(self.tasks)
 
+	def to_dict(self) -> Dict[str, Any]:
+		"""Serialize this pet and its tasks to a JSON-compatible dict."""
+		return {
+			"name": self.name,
+			"species": self.species,
+			"tasks": [task.to_dict() for task in self.tasks],
+		}
+
+	@classmethod
+	def from_dict(cls, data: Dict[str, Any]) -> "Pet":
+		"""Reconstruct a Pet (with its tasks) from a dict."""
+		pet = cls(name=data["name"], species=data["species"])
+		pet.tasks = [Task.from_dict(t) for t in data.get("tasks", [])]
+		return pet
+
 
 @dataclass
 class Task:
 	description: str
 	time_minutes: int
 	frequency: str
+	priority: PriorityLevel = PriorityLevel.MEDIUM
 	completed: bool = False
 	id: str = field(default_factory=lambda: str(uuid4())[:8])
 	pet_name: Optional[str] = None
@@ -82,6 +120,37 @@ class Task:
 	def mark_complete(self, current_day: Optional[int] = None, completed_on: Optional[date] = None) -> None:
 		"""Mark this task as completed using the legacy method name."""
 		self.mark_completed(current_day=current_day, completed_on=completed_on)
+
+	def to_dict(self) -> Dict[str, Any]:
+		"""Serialize this task to a JSON-compatible dict."""
+		return {
+			"description": self.description,
+			"time_minutes": self.time_minutes,
+			"frequency": self.frequency,
+			"priority": self.priority.value,
+			"completed": self.completed,
+			"id": self.id,
+			"pet_name": self.pet_name,
+			"last_completed_day": self.last_completed_day,
+			"preferred_start_minute": self.preferred_start_minute,
+			"due_date": self.due_date.isoformat() if self.due_date else None,
+		}
+
+	@classmethod
+	def from_dict(cls, data: Dict[str, Any]) -> "Task":
+		"""Reconstruct a Task from a dict, restoring the original id and due_date."""
+		return cls(
+			description=data["description"],
+			time_minutes=data["time_minutes"],
+			frequency=data["frequency"],
+			priority=PriorityLevel(data.get("priority", PriorityLevel.MEDIUM.value)),
+			completed=data.get("completed", False),
+			id=data.get("id", str(uuid4())[:8]),
+			pet_name=data.get("pet_name"),
+			last_completed_day=data.get("last_completed_day"),
+			preferred_start_minute=data.get("preferred_start_minute"),
+			due_date=date.fromisoformat(data["due_date"]) if data.get("due_date") else None,
+		)
 
 
 @dataclass
@@ -351,6 +420,12 @@ class Scheduler:
 		"as-needed": 3,
 	}
 
+	priority_order: Dict[PriorityLevel, int] = {
+		PriorityLevel.HIGH: 0,
+		PriorityLevel.MEDIUM: 1,
+		PriorityLevel.LOW: 2,
+	}
+
 	@staticmethod
 	def _has_time_overlap(start1: int, end1: int, start2: int, end2: int) -> bool:
 		"""Return whether two half-open minute windows overlap.
@@ -486,7 +561,7 @@ class Scheduler:
 			1. Filter tasks by owner/pet.
 			2. Keep only tasks that are due for the provided day.
 			3. Optionally drop completed tasks.
-			4. Sort by completion state, frequency rank, and duration.
+			4. Sort by completion state, priority rank, frequency rank, and duration.
 
 		Args:
 			owner: Owner whose pet tasks should be considered.
@@ -507,6 +582,7 @@ class Scheduler:
 			tasks,
 			key=lambda task: (
 				task.completed,
+				self.priority_order.get(task.priority, 1),
 				self.frequency_order.get(task.frequency.lower(), 99),
 				task.time_minutes,
 			),
@@ -645,6 +721,152 @@ class Scheduler:
 			"conflicts": all_conflicts,
 		}
 
+	@staticmethod
+	def compute_urgency_score(
+		task: Task,
+		day_index: int = 0,
+		current_date: Optional[date] = None,
+	) -> int:
+		"""Compute a numeric urgency score for a task (higher = more urgent).
+
+		Scoring factors:
+		  Overdue factor (0-50 pts): 10 pts per day past due_date, capped at 50.
+		  Recency factor (0-30 pts): ratio of days-since-completion to frequency
+		    interval; tasks never completed get a 20-pt bonus.
+		  Frequency factor (0-20 pts): daily > weekly > monthly > as-needed baseline.
+		  Duration bonus (0-10 pts): shorter tasks earn a small schedulability bonus.
+
+		Completed tasks always score 0.
+		"""
+		if task.completed:
+			return 0
+
+		score = 0
+		ref_date = current_date or date.today()
+
+		# Overdue factor: 10 pts per day overdue, capped at 50
+		if task.due_date is not None:
+			days_overdue = (ref_date - task.due_date).days
+			if days_overdue > 0:
+				score += min(50, days_overdue * 10)
+
+		# Recency factor: how long since last completion relative to interval
+		freq_intervals = {"daily": 1, "weekly": 7, "monthly": 30}
+		interval = freq_intervals.get(task.frequency.lower(), 0)
+		if interval > 0:
+			if task.last_completed_day is not None:
+				days_since = day_index - task.last_completed_day
+				overdue_ratio = days_since / interval
+				score += min(30, int(overdue_ratio * 15))
+			else:
+				# Never completed: treat as 2x overdue
+				score += 20
+
+		# Frequency baseline: daily tasks are inherently more time-sensitive
+		freq_base = {"daily": 20, "weekly": 12, "monthly": 6, "as-needed": 3}
+		score += freq_base.get(task.frequency.lower(), 0)
+
+		# Priority bonus: user-assigned priority adds a fixed offset
+		priority_bonus = {PriorityLevel.HIGH: 25, PriorityLevel.MEDIUM: 10, PriorityLevel.LOW: 0}
+		score += priority_bonus.get(task.priority, 10)
+
+		# Duration bonus: shorter tasks are easier to fit into a tight schedule
+		if task.time_minutes > 0:
+			score += max(0, 10 - (task.time_minutes // 10))
+
+		return score
+
+	def sort_by_urgency_score(
+		self,
+		tasks: List[Task],
+		day_index: int = 0,
+		current_date: Optional[date] = None,
+	) -> List[Task]:
+		"""Sort tasks by computed urgency score, highest urgency first.
+
+		Unlike sort_by_time (which ranks purely by duration), this uses a
+		multi-factor score that accounts for overdue status, time since last
+		completion relative to recurrence frequency, and task length.
+		"""
+		return sorted(
+			tasks,
+			key=lambda t: self.compute_urgency_score(t, day_index=day_index, current_date=current_date),
+			reverse=True,
+		)
+
+	def build_urgency_prioritized_schedule(
+		self,
+		owner: Owner,
+		day_index: int = 0,
+		pet_name: Optional[str] = None,
+		current_date: Optional[date] = None,
+	) -> Dict[str, Any]:
+		"""Build a daily schedule that orders tasks by urgency score.
+
+		Unlike build_daily_schedule (which orders by static frequency rank),
+		this method scores every candidate task dynamically and schedules the
+		highest-urgency tasks first, so overdue or time-sensitive work is never
+		bumped in favour of low-priority routine tasks.
+
+		Algorithm:
+		  1. Collect due, incomplete tasks (same filtering as build_daily_schedule).
+		  2. Compute an urgency score for every candidate.
+		  3. Sort candidates by descending urgency score.
+		  4. Greedily fill the time budget in urgency order.
+		  5. Defer tasks that no longer fit.
+
+		Returns:
+		  Dict with ``scheduled``, ``deferred``, ``conflicts``, and
+		  ``urgency_scores`` (task_id → score) keys.
+		"""
+		tasks = self.filter_tasks(owner, pet_name=pet_name)
+		tasks = [
+			t for t in tasks
+			if self.is_task_due(t, day_index=day_index) and not t.completed
+		]
+
+		scored = [
+			(t, self.compute_urgency_score(t, day_index=day_index, current_date=current_date))
+			for t in tasks
+		]
+		scored.sort(key=lambda x: x[1], reverse=True)
+
+		scheduled: List[Task] = []
+		deferred: List[Task] = []
+		current_minute = 0
+
+		for task, _score in scored:
+			if current_minute + task.time_minutes <= owner.time_available_minutes:
+				scheduled.append(task)
+				current_minute += task.time_minutes
+			else:
+				deferred.append(task)
+
+		scheduled_tasks: List[ScheduledTask] = []
+		current_time = 0
+		for task in scheduled:
+			task_score = self.compute_urgency_score(task, day_index=day_index, current_date=current_date)
+			scheduled_tasks.append(
+				ScheduledTask(
+					task_id=task.id,
+					task_title=task.description,
+					start_minute=current_time,
+					end_minute=current_time + task.time_minutes,
+					reason=f"Urgency score {task_score} — prioritised by overdue status and recency.",
+				)
+			)
+			current_time += task.time_minutes
+
+		all_conflicts = self.detect_conflicts(tasks, owner.time_available_minutes)
+		all_conflicts.extend(self.detect_scheduled_time_conflicts(scheduled_tasks))
+
+		return {
+			"scheduled": scheduled,
+			"deferred": deferred,
+			"conflicts": all_conflicts,
+			"urgency_scores": {t.id: s for t, s in scored},
+		}
+
 	def tasks_by_pet(self, owner: Owner) -> Dict[str, List[Task]]:
 		"""Return tasks grouped by pet name for the given owner."""
 		return {pet.name: pet.list_tasks() for pet in owner.pets}
@@ -657,7 +879,14 @@ class Scheduler:
 		return None
 
 	def _create_next_occurrence(self, task: Task, current_day: int, current_date: date) -> Optional[Task]:
-		"""Create a follow-up task for recurring daily/weekly tasks."""
+		"""Create a follow-up task for recurring daily/weekly tasks.
+
+		Next due date is always current_date + interval (rolling schedule).
+		This deliberately does NOT preserve the original cadence — if a task
+		was completed late, the next occurrence resets from today rather than
+		the original due date. This prevents backlog accumulation for tasks
+		that are missed due to real-world disruptions.
+		"""
 		frequency = task.frequency.lower()
 		if frequency not in {"daily", "weekly"}:
 			return None
@@ -729,6 +958,7 @@ class DailyScheduleGenerator:
 				tasks,
 				key=lambda t: (
 					t.completed,
+					self.scheduler.priority_order.get(t.priority, 1),
 					self.scheduler.frequency_order.get(t.frequency.lower(), 99),
 					t.time_minutes,
 				),
@@ -781,3 +1011,41 @@ class DailyScheduleGenerator:
 			lines.append(plan.summary_reasoning)
 
 		return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# JSON persistence
+# ---------------------------------------------------------------------------
+
+def save_to_json(owner: Owner, filepath: str = "data.json") -> None:
+	"""Write owner, all pets, and all tasks to a JSON file.
+
+	The file is created or overwritten on every call. All date fields are
+	stored as ISO-8601 strings so they round-trip correctly through
+	load_from_json.
+
+	Args:
+		owner:    The root Owner object to serialize.
+		filepath: Destination path (default: data.json next to the caller).
+	"""
+	with open(filepath, "w", encoding="utf-8") as fh:
+		json.dump(owner.to_dict(), fh, indent=2)
+
+
+def load_from_json(filepath: str = "data.json") -> Optional[Owner]:
+	"""Load an Owner (with pets and tasks) from a JSON file.
+
+	Returns None when the file does not exist so callers can treat a missing
+	file as "start fresh" without raising exceptions.
+
+	Args:
+		filepath: Source path (default: data.json).
+
+	Returns:
+		A fully reconstructed Owner object, or None if filepath is absent.
+	"""
+	if not Path(filepath).is_file():
+		return None
+	with open(filepath, "r", encoding="utf-8") as fh:
+		data = json.load(fh)
+	return Owner.from_dict(data)

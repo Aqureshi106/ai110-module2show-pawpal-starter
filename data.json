@@ -1,0 +1,43 @@
+{
+  "name": "Jacob",
+  "time_available_minutes": 60,
+  "preferences": [],
+  "pets": [
+    {
+      "name": "Mochi",
+      "species": "dog",
+      "tasks": [
+        {
+          "description": "Morning walk",
+          "time_minutes": 20,
+          "frequency": "daily",
+          "priority": "medium",
+          "completed": false,
+          "id": "65e792ee",
+          "pet_name": "Mochi",
+          "last_completed_day": null,
+          "preferred_start_minute": null,
+          "due_date": null
+        }
+      ]
+    },
+    {
+      "name": "Moch",
+      "species": "cat",
+      "tasks": [
+        {
+          "description": "Burp",
+          "time_minutes": 1,
+          "frequency": "daily",
+          "priority": "medium",
+          "completed": false,
+          "id": "c8403709",
+          "pet_name": "Moch",
+          "last_completed_day": null,
+          "preferred_start_minute": null,
+          "due_date": null
+        }
+      ]
+    }
+  ]
+}
